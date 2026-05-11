@@ -21,6 +21,7 @@ def main():
             for block in response_content:
                 if hasattr(block, "text"):
                     print(block.text)
+
         print()
 
 

@@ -1,12 +1,13 @@
 from .bash import run_bash
 from .file_ops import run_edit, run_read, run_write
-
+from config import SKILL_LOADER
 # 定义工具名称与函数的映射关系map映射
 TOOLS_HANDLERS = {
     "bash": lambda **kw: run_bash(kw["command"]),
     "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
     "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
     "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
+    "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"]),
 }
 
 # 定义子Agent的工具
@@ -50,6 +51,20 @@ CHILD_TOOLS = [
             },
             "required": ["path", "old_text", "new_text"],
         },
+    },
+    {   
+        "name": "load_skill",
+        "description": "Load specialized knowledge by name.",
+        "input_schema": {
+            "type": "object", 
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Skill name to load"
+                    }
+                }, 
+        "required": ["name"]
+        }
     },
 ]
 

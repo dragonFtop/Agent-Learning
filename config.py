@@ -4,6 +4,7 @@ from pathlib import Path
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
+from tools import SkillLoader
 
 load_dotenv(override=True)
 
@@ -13,7 +14,13 @@ if os.getenv("ANTHROPIC_BASE_URL"):
 
 WORKDIR = Path.cwd()
 MODEL = os.environ["MODEL_ID"]
-SYSTEM = f"You are a coding agent at {WORKDIR}. Use bash to solve tasks. Act, don't explain."
-SUBAGENT_SYSTEM = f"You are a coding subagent at {WORKDIR}. Complete the given task, then summarize your findings."
+PARENTAGENT_SYSTEM = f"You are a parent agent. Talk with the user or command subagent use tools to solve tasks."
+SUBAGENT_SYSTEM = f"You are a subagent. help the parentagent to solve tasks."
+
+SKILL_DIR = WORKDIR / "skills"
+SKILL_LOADER = SkillLoader(SKILL_DIR)
+SKILL_SYSTEM = f"""You are a coding agent at {WORKDIR}.Use load_skill to access specialized knowledge before tackling unfamiliar topics.
+Skills available:
+{SKILL_LOADER.get_descriptions()}"""
 
 client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))

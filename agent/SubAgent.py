@@ -2,7 +2,7 @@ from config import MODEL, SUBAGENT_SYSTEM, client
 from tools import CHILD_TOOLS, TOOLS_HANDLERS
 def run_subagent(prompt: str) -> str:
     sub_messages = [{"role": "user", "content": prompt}]
-    for _ in range(30):  # safety limit
+    for _ in range(30):  # safety limit，限制一次最多调用30次子Agent
         response = client.messages.create(
             model=MODEL,
             system=SUBAGENT_SYSTEM,
@@ -17,7 +17,7 @@ def run_subagent(prompt: str) -> str:
         results = []
         for block in response.content:
             if block.type == "tool_use":
-                handler = TOOL_HANDLERS.get(block.name)
+                handler = TOOLS_HANDLERS.get(block.name)
                 output = handler(**block.input)
                 results.append({"type": "tool_result",
                     "tool_use_id": block.id,
