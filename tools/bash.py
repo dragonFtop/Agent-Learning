@@ -1,7 +1,7 @@
 import os
 import subprocess
 
-
+# 定义运行bash命令的函数，包含危险命令过滤和超时处理
 def run_bash(command: str) -> str:
     dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
     if any(d in command for d in dangerous):

@@ -1,6 +1,5 @@
 from config import MODEL, SYSTEM, client
-from tools import TOOLS, TOOLS_HANDLERS
-
+from tools import PARENT_TOOLS, TOOLS_HANDLERS
 
 def agent_loop(messages: list):
     while True:
@@ -8,7 +7,7 @@ def agent_loop(messages: list):
             model=MODEL,
             system=SYSTEM,
             messages=messages,
-            tools=TOOLS,
+            tools=PARENT_TOOLS,
             max_tokens=8000,
         )
 
@@ -20,8 +19,14 @@ def agent_loop(messages: list):
         results = []
         for block in response.content:
             if block.type == "tool_use":
-                handler = TOOLS_HANDLERS.get(block.name)
-                output = handler(**block.input) if handler else f"UnKnown tool:{block.name}"
+                if block.name=="task":
+                    desc=block.input.get("description","subtask")
+                    print(f">task ({desc}):{block.input['prompt'][:80]}")
+                    output = run_subagent(block.input["prompt"])
+                else:
+                    handler = TOOLS_HANDLERS.get(block.name)
+                    output = handler(**block.input) if handler else f"UnKnown tool:{block.name}"
+                print(f"{str(output)[:200]}")
                 results.append(
                     {"type": "tool_result", "tool_use_id": block.id, "content": output}
                 )
