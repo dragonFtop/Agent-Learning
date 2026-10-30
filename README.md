@@ -1,5 +1,4 @@
-# Claude Code 式 Agent Harness（从零手写）
-
+# Claude Code 式 Agent Harness
 一个不依赖 LangChain / LlamaIndex 等框架、直接用 Python + Anthropic SDK 手写的
 命令行 Coding Agent。项目把 Claude Code 的核心机制拆成 17 个可独立理解的模块，
 再合并进同一个可运行的 CLI：主循环、工具注册、权限、Hooks、Todo、子代理、Skill、
