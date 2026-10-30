@@ -1,81 +1,102 @@
-from .bash import run_bash
-from .file_ops import run_edit, run_read, run_write
-from config import SKILL_LOADER
-# 定义工具名称与函数的映射关系map映射
-TOOLS_HANDLERS = {
-    "bash": lambda **kw: run_bash(kw["command"]),
-    "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
-    "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
-    "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
-    "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"]),
-}
+"""Tool registry: the s02 dispatch map with an explicit execution context.
 
-# 定义子Agent的工具
-CHILD_TOOLS = [
-    {
-        "name": "bash",
-        "description": "Run a shell command.",
-        "input_schema": {
-            "type": "object",
-            "properties": {"command": {"type": "string"}},
-            "required": ["command"],
-        },
-    },
-    {
-        "name": "read_file",
-        "description": "Read a file.",
-        "input_schema": {
-            "type": "object",
-            "properties": {"path": {"type": "string"}, "limit": {"type": "integer"}},
-            "required": ["path"],
-        },
-    },
-    {
-        "name": "write_file",
-        "description": "Write to a file.",
-        "input_schema": {
-            "type": "object",
-            "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
-            "required": ["path", "content"],
-        },
-    },
-    {
-        "name": "edit_file",
-        "description": "Edit a file.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "old_text": {"type": "string"},
-                "new_text": {"type": "string"},
-            },
-            "required": ["path", "old_text", "new_text"],
-        },
-    },
-    {   
-        "name": "load_skill",
-        "description": "Load specialized knowledge by name.",
-        "input_schema": {
-            "type": "object", 
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Skill name to load"
-                    }
-                }, 
-        "required": ["name"]
+A tool is a ``ToolSpec`` (schema + handler + visibility). Handlers receive a
+``ToolContext`` instead of reading globals, which is what lets the same tool
+run in the main workspace, inside a subagent, or inside a teammate's worktree.
+"""
+
+from __future__ import annotations
+
+import threading
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable
+
+Handler = Callable[[dict, "ToolContext"], str]
+
+
+@dataclass
+class ToolContext:
+    """Everything a handler may need beyond its own arguments."""
+
+    runtime: Any = None
+    cwd: Path = field(default_factory=Path.cwd)
+    profile: str = "lead"  # lead | subagent | teammate
+    agent_name: str = "lead"
+    task_id: str | None = None
+    interactive: bool = True
+    extra: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ToolSpec:
+    name: str
+    description: str
+    input_schema: dict
+    handler: Handler
+    source: str = "builtin"
+    # Which agent profiles may see this tool. Keeping this on the spec means
+    # adding a tool never requires editing the loop.
+    profiles: tuple[str, ...] = ("lead", "subagent", "teammate")
+
+    def to_anthropic(self) -> dict:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "input_schema": self.input_schema,
         }
-    },
-]
 
 
-# 定义父Agent的工具为子Agent工具的基础上增加一个task工具，允许父Agent创建子Agent并传递新的上下文信息。
-PARENT_TOOLS = CHILD_TOOLS + [
-    {"name": "task",
-     "description": "Spawn a subagent with fresh context.",
-     "input_schema": {
-         "type": "object",
-         "properties": {"prompt": {"type": "string"}},
-         "required": ["prompt"],
-     }},
-]
+class ToolRegistry:
+    def __init__(self) -> None:
+        self._tools: dict[str, ToolSpec] = {}
+        # MCP tools are registered while teammate threads may already be
+        # building their tool pools, so pool mutation and reads share a lock.
+        self._lock = threading.RLock()
+
+    def register(self, spec: ToolSpec, *, replace: bool = False) -> None:
+        with self._lock:
+            if spec.name in self._tools and not replace:
+                raise ValueError(f"Tool already registered: {spec.name}")
+            self._tools[spec.name] = spec
+
+    def unregister(self, name: str) -> None:
+        with self._lock:
+            self._tools.pop(name, None)
+
+    def get(self, name: str) -> ToolSpec | None:
+        with self._lock:
+            return self._tools.get(name)
+
+    def names(self) -> list[str]:
+        with self._lock:
+            return sorted(self._tools)
+
+    def subset(self, profile: str) -> "ToolRegistry":
+        registry = ToolRegistry()
+        with self._lock:
+            specs = list(self._tools.values())
+        for spec in specs:
+            if profile in spec.profiles:
+                registry.register(spec)
+        return registry
+
+    def to_anthropic_tools(self) -> list[dict]:
+        with self._lock:
+            specs = list(self._tools.values())
+        return [spec.to_anthropic() for spec in specs]
+
+    def dispatch(self, name: str, args: dict, ctx: ToolContext) -> str:
+        spec = self.get(name)
+        if spec is None:
+            return f"Error: unknown tool '{name}'"
+        if not isinstance(args, dict):
+            return f"Error: tool '{name}' expects an object input"
+        try:
+            result = spec.handler(args, ctx)
+        except Exception as error:  # noqa: BLE001 - model-facing tools return text
+            return f"Error: {type(error).__name__}: {error}"
+        return result if isinstance(result, str) else str(result)
+
+    def __contains__(self, name: str) -> bool:
+        return self.get(name) is not None

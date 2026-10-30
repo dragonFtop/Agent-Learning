@@ -1,4 +1,26 @@
+# Secrets - never commit
+.env
+
+# Python
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Runtime artifacts
+.transcripts/
+.tool_outputs/
+.memory/
+.tasks/
+.mailboxes/
+.worktrees/
+.runtime/
+.scheduled_tasks.json
+
+# Local scratch / editor copies
+out.txt
+* copy.*
+
+# IDE
 .idea/
-.env
